@@ -1,5 +1,6 @@
-#CXX = OMPI_CXX=clang++ mpic++
-CXX = clang++
+#CXX = mpic++
+CXX = OMPI_CXX=clang++ mpic++
+#CXX = clang++
 SRC = clustermometer
 TGT = run.exe
 
