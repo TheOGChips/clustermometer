@@ -1,9 +1,9 @@
-#include <iostream>
+//#include <iostream>
 #include <fstream>
 #include <string>
-#include <cstdio>
-#include <array>
-//#include <mpi.h>
+//#include <cstdio>
+//#include <array>
+#include <mpi.h>
 #include <ncurses.h>
 #include <thread>
 #include <chrono>
@@ -12,58 +12,74 @@
 using namespace std;
 
 const int MASTER = 0;
-const string CPU_TEMP = "/sys/class/thermal/thermal_zone0/temp";
+const string CPU_TEMP_FILE = "/sys/class/thermal/thermal_zone0/temp";	//same in all Raspberry Pis
 atomic<bool> stop (false);
 
-void run_display (int &num);
-void increment_num (int &num);
-//void set_filenames (array<string, NUM_CORES>&);
-//void open_files (array<ifstream, NUM_CORES>&, array<string, NUM_CORES>);
-//void close_files (array<ifstream, NUM_CORES>&);
-//float get_temp (array<ifstream, NUM_CORES>&, array<string, NUM_CORES>);
-//void display_temps (array<ifstream, NUM_CORES>&, array<string, NUM_CORES>);
+//void run_display (int&);
+void run_display (float[], const int);
+void increment_num (int&);
+void get_cpu_temp (float&);
+float read_cpu_temp (/*array<ifstream, NUM_CORES>&, array<string, NUM_CORES>*/);
+float to_celsius (float);
+float celsius_to_fahrenheit (float);
 
 int main()
 {
-	int temp = 0;
-	thread thr (increment_num, ref(temp));
-	run_display(temp);
-	thr.join();
+	MPI_Init(nullptr, nullptr);
+	
+	int rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	
+	if (rank == MASTER) {
+		//int temp = 0;
+		//thread thr (increment_num, ref(temp));
+		int world_size;
+		MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+		
+		float cpu_temps[world_size];
+		
+		
+		thread thr (get_cpu_temp, ref(cpu_temps[MASTER]));
+		//run_display(temp);
+		run_display(cpu_temps, world_size);
+		thr.join();
+	}
+	
+	else {
+		//currently, other nodes do nothing
+	}
+	
 	//array<string, NUM_CORES> filenames;
 	//array<ifstream, NUM_CORES> infiles;
 	
-	//MPI_Init();
-	
-	//int rank;
-	//MPI_Comm_rank(&rank, MPI_COMM_WORLD);
-	
-	//if (rank == MASTER) {
-		//thread display (record_temps, )
-	//}
-	//set_filenames(filenames);
-	//display_temps(infiles, filenames);
-	
-	//MPI_Finalize();
+	MPI_Finalize();
 	return 0;
 }
 
-void run_display (int &count)
+//void run_display (int &count)
+void run_display (float cpu_temps[], const int WORLD_SIZE)
 {
 	initscr();				//initialize ncurses environment
 	curs_set(0);			//turn off the cursor
 	nodelay(stdscr, true);	//make getch() nonblocking
 	noecho();				//turn off displaying keyboard input
 	
+	//string DEGREES_SYMBOL = "";
+	
 	printw("Press 'q' to finish...\n\n");
 	while (getch() != 'q') {
-		printw("count: %d\r", count);
+		for (int i = 0; i < WORLD_SIZE; i++) {
+			//printw("Node %d: %.1f %sC\r", i, cpu_temps[i], DEGREES_SYMBOL.c_str());
+			printw("Node %d: %.1f F\r", i, cpu_temps[i]);
+		}
+		//printw("count: %d\r", count);
 		refresh();
 	}
 	
 	endwin();		//terminate ncurses environment
 	stop = true;	//signal slave thread to terminate
 }
-
+/*
 void increment_num (int &count)
 {
 	//for (int i = 0; i < 6; i++) {
@@ -72,51 +88,42 @@ void increment_num (int &count)
 		count++;
 	}
 }
-
-/*void set_filenames (array<string, NUM_CORES> & filenames)
-{
-	for (int i = 0; i < NUM_CORES; i++) {
-		filenames[i] = "/sys/class/thermal/thermal_zone" + to_string(i) + "/temp";
-	}
-}*/
-/*
-void open_files (array<ifstream, NUM_CORES> & infiles, array<string, NUM_CORES> filenames)
-{
-	for (int i = 0; i < NUM_CORES; i++) {
-		infiles[i].open(filenames[i]);
-	}
-}
-
-void close_files (array<ifstream, NUM_CORES> & infiles)
-{
-	for (int i = 0; i < NUM_CORES; i++) {
-		infiles[i].close();
-	}
-}
-
-float get_temp (array<ifstream, NUM_CORES> & infiles, array<string, NUM_CORES> filenames)
-{
-	open_files(infiles, filenames);
-	
-	//array<float, NUM_CORES> cpu_temps;
-	float avg_cpu_temp = 0.0;
-	for (int i = 0; i < NUM_CORES; i++) {
-		float temp;
-		infiles[i] >> temp;
-		avg_cpu_temp += temp;
-	}
-	avg_cpu_temp /= NUM_CORES;
-	
-	close_files(infiles);
-	return avg_cpu_temp;
-}
-
-void display_temps (array<ifstream, NUM_CORES> & infiles, array<string, NUM_CORES> filenames)
-{
-	cpu_temp = record_temps(infiles, filenames);
-	
-	//for (int i = 0; i < NUM_CORES; i++) {
-	//	cout << "Core " << i << " temp: " << cpu_temps[i] << endl;
-	//}
-}
 */
+void get_cpu_temp (float & cpu_temp)
+{
+	//if master node
+	while (!stop) {
+		cpu_temp = read_cpu_temp();
+		cpu_temp = to_celsius(cpu_temp);
+		cpu_temp = celsius_to_fahrenheit(cpu_temp);
+		this_thread::sleep_for(chrono::seconds(1));	//prevents race condition for output
+	}
+	
+	//else (if slave node)
+		//get temperature (mC)
+		//convert to C
+		//convert to F
+		//TODO: Send local CPU temp back to master if a slave node
+}
+
+float read_cpu_temp (/*array<ifstream, NUM_CORES> & infiles, array<string, NUM_CORES> filenames*/)
+{
+	ifstream infile;
+	infile.open(CPU_TEMP_FILE.c_str());
+	
+	float temp;
+	infile >> temp;
+	
+	infile.close();
+	return temp;
+}
+
+float to_celsius (float mC)
+{
+	return mC / 1000;	// milliCelsius to Celsius
+}
+
+float celsius_to_fahrenheit (float celsius)
+{
+	return celsius * 1.8 + 32;	// Fahrenheit <- Celsius * (9 / 5) + 32
+}
