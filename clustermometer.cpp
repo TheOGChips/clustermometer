@@ -13,12 +13,11 @@ using namespace std;
 
 const int MASTER = 0;
 const string CPU_TEMP_FILE = "/sys/class/thermal/thermal_zone0/temp";	//same in all Raspberry Pis
-atomic<bool> stop (false);
 
 //void run_display (int&);
-void run_display (float[], const int);
+void run_display (float[], const int, atomic<bool>&);
 void increment_num (int&);
-void get_cpu_temp (float&);
+void get_master_cpu_temp (float&, const atomic<bool>&);
 float read_cpu_temp (/*array<ifstream, NUM_CORES>&, array<string, NUM_CORES>*/);
 float to_celsius (float);
 float celsius_to_fahrenheit (float);
@@ -33,20 +32,21 @@ int main()
 	if (rank == MASTER) {
 		//int temp = 0;
 		//thread thr (increment_num, ref(temp));
+		atomic<bool> stop (false);
 		int world_size;
 		MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 		
 		float cpu_temps[world_size];
 		
 		
-		thread thr (get_cpu_temp, ref(cpu_temps[MASTER]));
+		thread thr (get_master_cpu_temp, ref(cpu_temps[MASTER]), ref(stop));
 		//run_display(temp);
-		run_display(cpu_temps, world_size);
+		run_display(cpu_temps, world_size, stop);
 		thr.join();
 	}
 	
 	else {
-		//currently, other nodes do nothing
+		//get_cpu_temp();	//currently, other nodes do nothing
 	}
 	
 	//array<string, NUM_CORES> filenames;
@@ -57,7 +57,7 @@ int main()
 }
 
 //void run_display (int &count)
-void run_display (float cpu_temps[], const int WORLD_SIZE)
+void run_display (float cpu_temps[], const int WORLD_SIZE, atomic<bool> & stop)
 {
 	initscr();				//initialize ncurses environment
 	curs_set(0);			//turn off the cursor
@@ -89,10 +89,10 @@ void increment_num (int &count)
 	}
 }
 */
-void get_cpu_temp (float & cpu_temp)
+void get_master_cpu_temp (float & cpu_temp, const atomic<bool> & STOP)
 {
 	//if master node
-	while (!stop) {
+	while (!STOP) {
 		cpu_temp = read_cpu_temp();
 		cpu_temp = to_celsius(cpu_temp);
 		cpu_temp = celsius_to_fahrenheit(cpu_temp);
@@ -104,6 +104,11 @@ void get_cpu_temp (float & cpu_temp)
 		//convert to C
 		//convert to F
 		//TODO: Send local CPU temp back to master if a slave node
+}
+
+void get_slave_cpu_temp ()
+{
+	
 }
 
 float read_cpu_temp (/*array<ifstream, NUM_CORES> & infiles, array<string, NUM_CORES> filenames*/)
